@@ -1,0 +1,92 @@
+name: TradingAgents full research (alternate repo secrets)
+run-name: Research-only TradingAgents NVDA - auto-select model
+on:
+  push:
+    branches: [research-only-20261023]
+    paths: [.github/workflows/research-only-full-analysis.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  complete-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+      TRADINGAGENTS_RESULTS_DIR: ${{ github.workspace }}/research-output
+      TRADINGAGENTS_CACHE_DIR: ${{ github.workspace }}/research-cache
+      TRADINGAGENTS_OUTPUT_LANGUAGE: Chinese
+      TRADINGAGENTS_MAX_DEBATE_ROUNDS: "1"
+      TRADINGAGENTS_MAX_RISK_ROUNDS: "1"
+      TRADINGAGENTS_MAX_TOOL_ROUNDS: "8"
+      TRADINGAGENTS_CHECKPOINT_ENABLED: "false"
+    steps:
+      - name: Pick an available LLM provider without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$DEEPSEEK_API_KEY" ]]; then
+            echo "TRADINGAGENTS_LLM_PROVIDER=deepseek" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_QUICK_THINK_LLM=deepseek-chat" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_DEEP_THINK_LLM=deepseek-chat" >> "$GITHUB_ENV"
+            echo "Selected DeepSeek."
+          elif [[ -n "$GOOGLE_API_KEY" ]]; then
+            echo "TRADINGAGENTS_LLM_PROVIDER=google" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_QUICK_THINK_LLM=gemini-2.5-flash" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_DEEP_THINK_LLM=gemini-2.5-pro" >> "$GITHUB_ENV"
+            echo "Selected Google Gemini."
+          elif [[ -n "$OPENAI_API_KEY" ]]; then
+            echo "TRADINGAGENTS_LLM_PROVIDER=openai" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_QUICK_THINK_LLM=gpt-4o-mini" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_DEEP_THINK_LLM=gpt-4o" >> "$GITHUB_ENV"
+            echo "Selected OpenAI."
+          elif [[ -n "$ANTHROPIC_API_KEY" ]]; then
+            echo "TRADINGAGENTS_LLM_PROVIDER=anthropic" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_QUICK_THINK_LLM=claude-haiku-4-5" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_DEEP_THINK_LLM=claude-sonnet-4-5" >> "$GITHUB_ENV"
+            echo "Selected Anthropic."
+          elif [[ -n "$OPENROUTER_API_KEY" ]]; then
+            echo "TRADINGAGENTS_LLM_PROVIDER=openrouter" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_QUICK_THINK_LLM=openai/gpt-4o-mini" >> "$GITHUB_ENV"
+            echo "TRADINGAGENTS_DEEP_THINK_LLM=openai/gpt-4o" >> "$GITHUB_ENV"
+            echo "Selected OpenRouter."
+          else
+            echo "::error::No recognized API key found in this repository's Actions secrets."
+            echo "Expected one of: DEEPSEEK_API_KEY, GOOGLE_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY."
+            exit 2
+          fi
+      - name: Checkout TradingAgents research framework (public repo)
+        uses: actions/checkout@v4
+        with:
+          repository: YuZhang0118/TradingAgents
+          ref: main
+          path: TradingAgents
+          persist-credentials: false
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research program
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ./TradingAgents
+          tradingagents --help > /dev/null
+      - name: Full analyst research plus bull-bear debate and PM judgment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Research only; public market data; no IBKR connection, no real orders."
+          tradingagents --ticker NVDA --date 2026-10-22 --analysts market,sentiment,news,fundamentals --save --no-show
+      - name: Archive non-trading research reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradingagents-nvda-20261022
+          path: research-output/
+          retention-days: 7
+          if-no-files-found: ignore
